@@ -3,13 +3,16 @@ import getpass
 import MySQLdb
 import sys
 import subprocess
+import requests
+import socket
+from urlparse import urlparse
 
 user = raw_input("Username: ")
 passwd = getpass.getpass("Password: ")
 all = len(sys.argv)>1 and sys.argv[1] == "--all"
 
 def execute_sh(sh):
-	return subprocess.check_output("./"+sh).split("\n")
+	return subprocess.check_output("./"+sh).strip().split("\n")
 
 def execute(cursor,file):
 	_sql=None
@@ -17,6 +20,18 @@ def execute(cursor,file):
 		_sql=myfile.read()
 	cursor.execute(_sql)
 	return cursor.fetchall()
+
+def getIP(d):
+	try:
+		ip = socket.gethostbyname(d)
+		return ip
+	except Exception:
+		return "KO!!"
+
+def getDestination(d):
+	url = requests.get("http://"+d, verify=False).url
+	parse = urlparse(url)
+	return parse.netloc.split(":")[0]
 
 
 db = MySQLdb.connect("mysql", user, passwd)
@@ -30,6 +45,8 @@ results = execute(cursor, 'search-wp.sql')
 for row in results:
 	sql = sql+"\n\t("
 	sql = sql+"select domain site from "+row[0]+"."+row[1]
+	if not all:
+		sql = sql + " where deleted=0"
 	sql = sql+") "
 	sql = sql+"\n\tUNION"
 
@@ -51,9 +68,28 @@ for row in results:
 
 db.close()
 
-for site in execute_sh("search-apache.sh"):
-	if len(site)>0 and site not in sites:
+for site in execute_sh("search-apache.sh") + execute_sh("search-mailman.sh"):
+	if site not in sites:
 		sites.append(site)
+
+sites = sorted(sites)
+
+if not all:
+	ip = requests.get('http://ip.42.pl/raw').text
+	for i in range(len(sites)-1, -1, -1):
+		s = sites[i]
+		s_ip = getIP(s)
+		if ip != s_ip:
+			print ip+" != %14s = %s" % (s_ip, s)
+			del sites[i]
+		'''
+		else:
+			d=getDestination(site)
+			if d != site:
+				print "%s ----> %s" (site, d)
+				del sites[i]
+		'''
+	print ""
 
 domains=sorted(list(set(map(lambda x: ".".join(x.split(".")[-2:]), sites))))
 
