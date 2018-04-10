@@ -1,3 +1,4 @@
 certbot*.sh
 *.txt
 *.log
+check-ssl.sh

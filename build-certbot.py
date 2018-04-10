@@ -45,6 +45,10 @@ def get_split(arr, size):
     l.append(arr[-r:])
     return l
 
+
+def get_certbot(sts):
+    return "certbot --apache --force-renewal -d " + " -d ".join(sts) + "\n"
+
 db = MySQLdb.connect("mysql", user, passwd)
 
 cursor = db.cursor()
@@ -112,19 +116,37 @@ if not all:
 MAX_DOM = 100
 domains = sorted(list(set(map(lambda x: ".".join(x.split(".")[-2:]), sites))))
 
-with open("certbot.sh", "w") as f:
-    f.write("#!/bin/bash\n")
-    for d in domains:
-        print d
-        sts = [d] + [s for s in sites if s.endswith("." + d)]
-        print "\t" + '\n\t'.join(sts)
-        if len(sts) <= MAX_DOM:
-            f.write("\n# " + d + "\n\n")
-            f.write("certbot --apache -d " + " -d ".join(sts) + "\n")
-        else:
-            count = 1
-            for stsX in get_split(sts, MAX_DOM):
-                f.write("\n# " + d + " PART " + str(count)
-                        + " - " + str(len(stsX)) + " items\n\n")
-                f.write("certbot --apache -d " + " -d ".join(stsX) + "\n")
-                count = count + 1
+f1 = open("certbot.sh", "w")
+f1.write("#!/bin/bash\n")
+
+f2 = open("check-ssl.sh", "w")
+f2.write('''#!/bin/bash
+check () {
+  echo -n "$1 "
+  if true | openssl s_client -connect $1:443 2>/dev/null | openssl x509 -noout -checkend 0 >/dev/null; then
+    echo "OK"
+  else
+    echo "KO"
+  fi
+}
+''')
+
+for d in domains:
+    print d
+    sts = [d] + [s for s in sites if s.endswith("." + d)]
+    print "\t" + '\n\t'.join(sts)
+    for s in sts:
+        f2.write("check "+s+"\n")
+    if len(sts) <= MAX_DOM:
+        f1.write("\n# " + d + "\n\n")
+        f1.write(get_certbot(sts))
+    else:
+        count = 1
+        for stsX in get_split(sts, MAX_DOM):
+            f1.write("\n# " + d + " PART " + str(count)
+                    + " - " + str(len(stsX)) + " items\n\n")
+            f1.write(get_certbot(stsX))
+            count = count + 1
+
+f1.close()
+f2.close()
